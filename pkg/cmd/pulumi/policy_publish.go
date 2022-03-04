@@ -111,14 +111,13 @@ func requirePolicyPack(policyPack string) (backend.PolicyPack, error) {
 	cloudURL, err := workspace.GetCurrentCloudURL()
 	if err != nil {
 		return nil, fmt.Errorf("`pulumi policy` command requires the user to be logged into the Pulumi service: %w", err)
-
 	}
 
 	displayOptions := display.Options{
 		Color: cmdutil.GetGlobalColorization(),
 	}
 
-	b, err := httpstate.Login(commandContext(), cmdutil.Diag(), cloudURL, displayOptions)
+	b, err := httpstate.Login(commandContext(), cmdutil.Diag(), cloudURL, workspace.GetCloudInsecure(cloudURL), displayOptions)
 	if err != nil {
 		return nil, err
 	}

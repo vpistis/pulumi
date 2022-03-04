@@ -89,10 +89,11 @@ func (c *serviceCrypter) BulkDecrypt(secrets []string) (map[string]string, error
 }
 
 type serviceSecretsManagerState struct {
-	URL     string `json:"url,omitempty"`
-	Owner   string `json:"owner"`
-	Project string `json:"project"`
-	Stack   string `json:"stack"`
+	URL      string `json:"url,omitempty"`
+	Owner    string `json:"owner"`
+	Project  string `json:"project"`
+	Stack    string `json:"stack"`
+	Insecure bool   `json:"insecure,omitempty"`
 }
 
 var _ secrets.Manager = &serviceSecretsManager{}
@@ -123,10 +124,11 @@ func (sm *serviceSecretsManager) Encrypter() (config.Encrypter, error) {
 func NewServiceSecretsManager(c *client.Client, id client.StackIdentifier) (secrets.Manager, error) {
 	return &serviceSecretsManager{
 		state: serviceSecretsManagerState{
-			URL:     c.URL(),
-			Owner:   id.Owner,
-			Project: id.Project,
-			Stack:   id.Stack,
+			URL:      c.URL(),
+			Owner:    id.Owner,
+			Project:  id.Project,
+			Stack:    id.Stack,
+			Insecure: c.Insecure(),
 		},
 		crypter: newServiceCrypter(c, id),
 	}, nil
@@ -155,7 +157,7 @@ func NewServiceSecretsManagerFromState(state json.RawMessage) (secrets.Manager, 
 		Project: s.Project,
 		Stack:   s.Stack,
 	}
-	c := client.NewClient(s.URL, token, diag.DefaultSink(ioutil.Discard, ioutil.Discard, diag.FormatOptions{}))
+	c := client.NewClient(s.URL, token, diag.DefaultSink(ioutil.Discard, ioutil.Discard, diag.FormatOptions{}), s.Insecure)
 
 	return &serviceSecretsManager{
 		state:   s,

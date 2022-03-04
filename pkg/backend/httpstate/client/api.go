@@ -128,8 +128,8 @@ func intPtr(i int) *int {
 }
 
 // pulumiAPICall makes an HTTP request to the Pulumi API.
-func pulumiAPICall(ctx context.Context, d diag.Sink, cloudAPI, method, path string, body []byte, tok accessToken,
-	opts httpCallOptions) (string, *http.Response, error) {
+func pulumiAPICall(ctx context.Context, d diag.Sink, httpClient *http.Client, cloudAPI, method, path string, body []byte,
+	tok accessToken, opts httpCallOptions) (string, *http.Response, error) {
 
 	// Normalize URL components
 	cloudAPI = strings.TrimSuffix(cloudAPI, "/")
@@ -227,9 +227,9 @@ func pulumiAPICall(ctx context.Context, d diag.Sink, cloudAPI, method, path stri
 
 			MaxRetryCount: intPtr(4),
 		}
-		resp, err = httputil.DoWithRetryOpts(req, http.DefaultClient, opts)
+		resp, err = httputil.DoWithRetryOpts(req, httpClient, opts)
 	} else {
-		resp, err = http.DefaultClient.Do(req)
+		resp, err = httpClient.Do(req)
 	}
 
 	if err != nil {
@@ -279,7 +279,7 @@ func pulumiAPICall(ctx context.Context, d diag.Sink, cloudAPI, method, path stri
 // the request body (use nil for GETs), and if successful, marshalling the responseObj
 // as JSON and storing it in respObj (use nil for NoContent). The error return type might
 // be an instance of apitype.ErrorResponse, in which case will have the response code.
-func pulumiRESTCall(ctx context.Context, diag diag.Sink, cloudAPI, method, path string, queryObj, reqObj,
+func pulumiRESTCall(ctx context.Context, diag diag.Sink, httpClient *http.Client, cloudAPI, method, path string, queryObj, reqObj,
 	respObj interface{}, tok accessToken, opts httpCallOptions) error {
 
 	// Compute query string from query object
@@ -306,7 +306,7 @@ func pulumiRESTCall(ctx context.Context, diag diag.Sink, cloudAPI, method, path 
 	}
 
 	// Make API call
-	url, resp, err := pulumiAPICall(ctx, diag, cloudAPI, method, path+querystring, reqBody, tok, opts)
+	url, resp, err := pulumiAPICall(ctx, diag, httpClient, cloudAPI, method, path+querystring, reqBody, tok, opts)
 	if err != nil {
 		return err
 	}

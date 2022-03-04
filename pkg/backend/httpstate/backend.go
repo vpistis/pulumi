@@ -122,7 +122,7 @@ type cloudBackend struct {
 var _ backend.SpecificDeploymentExporter = &cloudBackend{}
 
 // New creates a new Pulumi backend for the given cloud API URL and token.
-func New(d diag.Sink, cloudURL string) (Backend, error) {
+func New(d diag.Sink, cloudURL string, insecure bool) (Backend, error) {
 	cloudURL = ValueOrDefaultURL(cloudURL)
 	account, err := workspace.GetAccount(cloudURL)
 	if err != nil {
@@ -139,13 +139,13 @@ func New(d diag.Sink, cloudURL string) (Backend, error) {
 	return &cloudBackend{
 		d:              d,
 		url:            cloudURL,
-		client:         client.NewClient(cloudURL, apiToken, d),
+		client:         client.NewClient(cloudURL, apiToken, d, insecure),
 		currentProject: currentProject,
 	}, nil
 }
 
 // loginWithBrowser uses a web-browser to log into the cloud and returns the cloud backend for it.
-func loginWithBrowser(ctx context.Context, d diag.Sink, cloudURL string, opts display.Options) (Backend, error) {
+func loginWithBrowser(ctx context.Context, d diag.Sink, cloudURL string, insecure bool, opts display.Options) (Backend, error) {
 	// Locally, we generate a nonce and spin up a web server listening on a random port on localhost. We then open a
 	// browser to a special endpoint on the Pulumi.com console, passing the generated nonce as well as the port of the
 	// webserver we launched. This endpoint does the OAuth flow and when it completes, redirects to localhost passing
@@ -212,13 +212,13 @@ func loginWithBrowser(ctx context.Context, d diag.Sink, cloudURL string, opts di
 
 	accessToken := <-c
 
-	username, err := client.NewClient(cloudURL, accessToken, d).GetPulumiAccountName(ctx)
+	username, err := client.NewClient(cloudURL, accessToken, d, insecure).GetPulumiAccountName(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	// Save the token and return the backend
-	account := workspace.Account{AccessToken: accessToken, Username: username, LastValidatedAt: time.Now()}
+	account := workspace.Account{AccessToken: accessToken, Username: username, LastValidatedAt: time.Now(), Insecure: insecure}
 	if err = workspace.StoreAccount(cloudURL, account, true); err != nil {
 		return nil, err
 	}
@@ -226,11 +226,11 @@ func loginWithBrowser(ctx context.Context, d diag.Sink, cloudURL string, opts di
 	// Welcome the user since this was an interactive login.
 	WelcomeUser(opts)
 
-	return New(d, cloudURL)
+	return New(d, cloudURL, insecure)
 }
 
 // Login logs into the target cloud URL and returns the cloud backend for it.
-func Login(ctx context.Context, d diag.Sink, cloudURL string, opts display.Options) (Backend, error) {
+func Login(ctx context.Context, d diag.Sink, cloudURL string, insecure bool, opts display.Options) (Backend, error) {
 	cloudURL = ValueOrDefaultURL(cloudURL)
 
 	// If we have a saved access token, and it is valid, use it.
@@ -239,7 +239,7 @@ func Login(ctx context.Context, d diag.Sink, cloudURL string, opts display.Optio
 		// If the account was last verified less than an hour ago, assume the token is valid.
 		valid, username := true, existingAccount.Username
 		if username == "" || existingAccount.LastValidatedAt.Add(1*time.Hour).Before(time.Now()) {
-			valid, username, err = IsValidAccessToken(ctx, cloudURL, existingAccount.AccessToken)
+			valid, username, err = IsValidAccessToken(ctx, cloudURL, insecure, existingAccount.AccessToken)
 			if err != nil {
 				return nil, err
 			}
@@ -249,11 +249,12 @@ func Login(ctx context.Context, d diag.Sink, cloudURL string, opts display.Optio
 		if valid {
 			// Save the token. While it hasn't changed this will update the current cloud we are logged into, as well.
 			existingAccount.Username = username
+			existingAccount.Insecure = insecure
 			if err = workspace.StoreAccount(cloudURL, existingAccount, true); err != nil {
 				return nil, err
 			}
 
-			return New(d, cloudURL)
+			return New(d, cloudURL, insecure)
 		}
 	}
 
@@ -319,7 +320,7 @@ func Login(ctx context.Context, d diag.Sink, cloudURL string, opts display.Optio
 			}
 
 			if accessToken == "" {
-				return loginWithBrowser(ctx, d, cloudURL, opts)
+				return loginWithBrowser(ctx, d, cloudURL, insecure, opts)
 			}
 
 			// Welcome the user since this was an interactive login.
@@ -328,7 +329,7 @@ func Login(ctx context.Context, d diag.Sink, cloudURL string, opts display.Optio
 	}
 
 	// Try and use the credentials to see if they are valid.
-	valid, username, err := IsValidAccessToken(ctx, cloudURL, accessToken)
+	valid, username, err := IsValidAccessToken(ctx, cloudURL, insecure, accessToken)
 	if err != nil {
 		return nil, err
 	} else if !valid {
@@ -336,12 +337,12 @@ func Login(ctx context.Context, d diag.Sink, cloudURL string, opts display.Optio
 	}
 
 	// Save them.
-	account := workspace.Account{AccessToken: accessToken, Username: username, LastValidatedAt: time.Now()}
+	account := workspace.Account{AccessToken: accessToken, Username: username, LastValidatedAt: time.Now(), Insecure: insecure}
 	if err = workspace.StoreAccount(cloudURL, account, true); err != nil {
 		return nil, err
 	}
 
-	return New(d, cloudURL)
+	return New(d, cloudURL, insecure)
 }
 
 // WelcomeUser prints a Welcome to Pulumi message.
@@ -448,17 +449,11 @@ func (b *cloudBackend) GetPolicyPack(ctx context.Context, policyPack string,
 		return nil, err
 	}
 
-	account, err := workspace.GetAccount(b.CloudURL())
-	if err != nil {
-		return nil, err
-	}
-	apiToken := account.AccessToken
-
 	return &cloudPolicyPack{
 		ref: newCloudBackendPolicyPackReference(b.CloudConsoleURL(),
 			policyPackRef.OrgName(), policyPackRef.Name()),
 		b:  b,
-		cl: client.NewClient(b.CloudURL(), apiToken, d)}, nil
+		cl: b.client}, nil
 }
 
 func (b *cloudBackend) ListPolicyGroups(ctx context.Context, orgName string, inContToken backend.ContinuationToken) (
@@ -1456,11 +1451,11 @@ func (b *cloudBackend) tryNextUpdate(ctx context.Context, update client.UpdateId
 
 // IsValidAccessToken tries to use the provided Pulumi access token and returns if it is accepted
 // or not. Returns error on any unexpected error.
-func IsValidAccessToken(ctx context.Context, cloudURL, accessToken string) (bool, string, error) {
+func IsValidAccessToken(ctx context.Context, cloudURL string, insecure bool, accessToken string) (bool, string, error) {
 	// Make a request to get the authenticated user. If it returns a successful response,
 	// we know the access token is legit. We also parse the response as JSON and confirm
 	// it has a githubLogin field that is non-empty (like the Pulumi Service would return).
-	username, err := client.NewClient(cloudURL, accessToken, cmdutil.Diag()).GetPulumiAccountName(ctx)
+	username, err := client.NewClient(cloudURL, accessToken, cmdutil.Diag(), insecure).GetPulumiAccountName(ctx)
 	if err != nil {
 		if errResp, ok := err.(*apitype.ErrorResponse); ok && errResp.Code == 401 {
 			return false, "", nil
