@@ -94,7 +94,7 @@ func IntoQName(s string) QName {
 
 // AsQName converts a given string to a QName, asserting its validity.
 func AsQName(s string) QName {
-	contract.Assertf(IsQName(s), "Expected string '%v' to be a name (%v)", s, QNameRegexpPattern)
+	contract.Assertf(IsQName(s), "Expected string '%v' to be a qname (%v)", s, QNameRegexpPattern)
 	return QName(s)
 }
 

@@ -69,6 +69,10 @@ func (c cloudBackendReference) Name() tokens.Name {
 	return c.name
 }
 
+func (c cloudBackendReference) QName() tokens.QName {
+	return tokens.QName(fmt.Sprintf("%s/%s/%s", c.owner, c.project, c.name))
+}
+
 // cloudStack is a cloud stack descriptor.
 type cloudStack struct {
 	// ref is the stack's unique name.

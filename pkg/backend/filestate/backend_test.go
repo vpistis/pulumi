@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -252,14 +253,14 @@ func TestCancel(t *testing.T) {
 	err = lb.Lock(ctx, aStackRef)
 	assert.NoError(t, err)
 	// check the lock file exists
-	lockExists, err := lb.bucket.Exists(ctx, lb.lockPath(aStackRef.Name()))
+	lockExists, err := lb.bucket.Exists(ctx, lb.lockPath(aStackRef.(localBackendReference).QName()))
 	assert.NoError(t, err)
 	assert.True(t, lockExists)
 	// Call CancelCurrentUpdate
 	err = lb.CancelCurrentUpdate(ctx, aStackRef)
 	assert.NoError(t, err)
 	// Now check the lock file no longer exists
-	lockExists, err = lb.bucket.Exists(ctx, lb.lockPath(aStackRef.Name()))
+	lockExists, err = lb.bucket.Exists(ctx, lb.lockPath(aStackRef.(localBackendReference).QName()))
 	assert.NoError(t, err)
 	assert.False(t, lockExists)
 
@@ -280,4 +281,101 @@ func TestCancel(t *testing.T) {
 	assert.NoError(t, err)
 	err = lb.checkForLock(ctx, aStackRef)
 	assert.NoError(t, err)
+}
+
+func TestLegacyFolderStructure(t *testing.T) {
+	t.Parallel()
+
+	// Login to a temp dir filestate backend
+	tmpDir, err := ioutil.TempDir("", "filestatebackend")
+	assert.NoError(t, err)
+	b, err := New(cmdutil.Diag(), "file://"+filepath.ToSlash(tmpDir))
+	assert.NoError(t, err)
+	ctx := context.Background()
+
+	// Make a dummy stack file in the legacy location
+	err = os.MkdirAll(path.Join(tmpDir, ".pulumi", "stacks"), os.ModePerm)
+	assert.NoError(t, err)
+	err = os.WriteFile(path.Join(tmpDir, ".pulumi", "stacks", "a.json"), []byte("{}"), os.ModePerm)
+	assert.NoError(t, err)
+
+	// Check that list stack shows that stack
+	stacks, token, err := b.ListStacks(ctx, backend.ListStacksFilter{}, nil /* inContToken */)
+	assert.NoError(t, err)
+	assert.Nil(t, token)
+	assert.Len(t, stacks, 1)
+	assert.Equal(t, "a", stacks[0].Name().String())
+
+	// Create a new non-project stack
+	bRef, err := b.ParseStackReference("b")
+	assert.NoError(t, err)
+	assert.Equal(t, "b", bRef.String())
+	bStack, err := b.CreateStack(ctx, bRef, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, "b", bStack.Ref().String())
+	assert.FileExists(t, path.Join(tmpDir, ".pulumi", "stacks", "b.json"))
+}
+
+func TestProjectFolderStructure(t *testing.T) {
+	t.Parallel()
+
+	// Login to a temp dir filestate backend
+	tmpDir, err := ioutil.TempDir("", "filestatebackend")
+	assert.NoError(t, err)
+	b, err := New(cmdutil.Diag(), "file://"+filepath.ToSlash(tmpDir))
+	assert.NoError(t, err)
+	ctx := context.Background()
+
+	// Make a dummy stack file in the legacy location
+	err = os.MkdirAll(path.Join(tmpDir, ".pulumi", "stacks", "testproj"), os.ModePerm)
+	assert.NoError(t, err)
+	err = os.WriteFile(path.Join(tmpDir, ".pulumi", "stacks", "testproj", "a.json"), []byte("{}"), os.ModePerm)
+	assert.NoError(t, err)
+
+	// Check that testproj is reported as existing
+	exists, err := b.DoesProjectExist(ctx, "testproj")
+	assert.NoError(t, err)
+	assert.True(t, exists)
+
+	// Check that list stack shows that stack
+	stacks, token, err := b.ListStacks(ctx, backend.ListStacksFilter{}, nil /* inContToken */)
+	assert.NoError(t, err)
+	assert.Nil(t, token)
+	assert.Len(t, stacks, 1)
+	assert.Equal(t, "testproj/a", stacks[0].Name().String())
+
+	// Create a new project stack
+	bRef, err := b.ParseStackReference("testproj/b")
+	assert.NoError(t, err)
+	assert.Equal(t, "testproj/b", bRef.String())
+	bStack, err := b.CreateStack(ctx, bRef, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, "testproj/b", bStack.Ref().String())
+	assert.FileExists(t, path.Join(tmpDir, ".pulumi", "stacks", "testproj", "b.json"))
+}
+
+func TestCanRenameStack(t *testing.T) {
+	t.Parallel()
+
+	// Login to a temp dir filestate backend
+	tmpDir, err := ioutil.TempDir("", "filestatebackend")
+	assert.NoError(t, err)
+	b, err := New(cmdutil.Diag(), "file://"+filepath.ToSlash(tmpDir))
+	assert.NoError(t, err)
+	ctx := context.Background()
+
+	// Create a new non-project stack
+	bRef, err := b.ParseStackReference("b")
+	assert.NoError(t, err)
+	assert.Equal(t, "b", bRef.String())
+	bStack, err := b.CreateStack(ctx, bRef, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, "b", bStack.Ref().String())
+	assert.FileExists(t, path.Join(tmpDir, ".pulumi", "stacks", "b.json"))
+
+	// Rename it
+	newBStack, err := b.RenameStack(ctx, bStack, "testproj/b")
+	assert.NoError(t, err)
+	assert.Equal(t, "testproj/b", newBStack.String())
+	assert.FileExists(t, path.Join(tmpDir, ".pulumi", "stacks", "testproj", "b.json"))
 }
