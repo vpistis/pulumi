@@ -279,11 +279,11 @@ func (b *localBackend) ParseStackReference(stackRef string) (backend.StackRefere
 	}
 
 	if project != "" && !tokens.IsName(project) {
-		return nil, errors.New("project names may only contain alphanumerics, hyphens, underscores, and periods")
+		return nil, fmt.Errorf("project names may only contain alphanumerics, hyphens, underscores, and periods: %s", project)
 	}
 
 	if !tokens.IsName(name) {
-		return nil, errors.New("stack names may only contain alphanumerics, hyphens, underscores, and periods")
+		return nil, fmt.Errorf("stack names may only contain alphanumerics, hyphens, underscores, and periods: %s", name)
 	}
 
 	return localBackendReference{name: tokens.Name(name), project: tokens.Name(project)}, nil
