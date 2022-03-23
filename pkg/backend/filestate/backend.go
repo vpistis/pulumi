@@ -878,6 +878,10 @@ func (b *localBackend) getLocalStacks() ([]tokens.QName, error) {
 				continue
 			}
 
+			// TODO: Could we improve the efficiency here by firstly making listBucket return an enumerator not
+			// eagerly collecting all keys into a slice, and secondly by getting listBucket to return all
+			// descendent items not just the immediate children. We could then do the necessary spliting by
+			// file paths here to work out project names.
 			projectFiles, err := listBucket(b.bucket, filepath.Join(path, projName))
 			if err != nil {
 				return nil, fmt.Errorf("error listing stacks: %w", err)
