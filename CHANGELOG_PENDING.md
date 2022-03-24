@@ -18,6 +18,8 @@
 - [cli/plugins] - Improved error message for missing plugins.
   [#5208](https://github.com/pulumi/pulumi/pull/5208)
 
+- [cli/backend] - The filestate backend now supports project scoped stacks. Unlike the service backend the CLI will not automatically name stacks with the current project; users will have to do this explicitly, as we have to continue supporting non-project scoped stacks as well. To make a project scoped stack use the full name in `init`, e.g. `pulumi stack init project/stack`.
+  [#9262](https://github.com/pulumi/pulumi/pull/9262)
 ### Bug Fixes
 
 - [sdk/nodejs] - Fix uncaught error "ENOENT: no such file or directory" when an error occurs during the stack up.
