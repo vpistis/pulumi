@@ -17,7 +17,6 @@
   [#10444](https://github.com/pulumi/pulumi/pull/10444)
 
 - [codegen/schema] Support options.version on pulumi convert
-  [#10194](https://github.com/pulumi/pulumi/pull/10194)
 
 ### Bug Fixes
 
