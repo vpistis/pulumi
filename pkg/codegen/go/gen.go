@@ -30,8 +30,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"unicode"
 
+	"github.com/iancoleman/strcase"
 	"github.com/pulumi/pulumi/pkg/v3/codegen"
 	"github.com/pulumi/pulumi/pkg/v3/codegen/schema"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/diag"
@@ -93,24 +93,14 @@ func Title(s string) string {
 	if s[0] == '$' {
 		return Title(s[1:])
 	}
-	runes := []rune(s)
-	return string(append([]rune{unicode.ToUpper(runes[0])}, runes[1:]...))
+	// runes := []rune(s)
+	// return removeHyphens(string(append([]rune{unicode.ToUpper(runes[0])}, runes[1:]...)))
+	return strcase.ToCamel(s)
 }
 
+// camel converts s to camelcase.
 func camel(s string) string {
-	if s == "" {
-		return ""
-	}
-	runes := []rune(s)
-	res := make([]rune, 0, len(runes))
-	for i, r := range runes {
-		if unicode.IsLower(r) {
-			res = append(res, runes[i:]...)
-			break
-		}
-		res = append(res, unicode.ToLower(r))
-	}
-	return string(res)
+	return strcase.ToLowerCamel(s)
 }
 
 func tokenToPackage(pkg *schema.Package, overrides map[string]string, tok string) string {
@@ -2268,36 +2258,38 @@ type objectProperty struct {
 //
 // Directly invalid:
 //
-//     type T struct {
-//         Invalid T
-//     }
+//	type T struct {
+//	    Invalid T
+//	}
 //
 // Indirectly invalid:
 //
-//     type T struct {
-//         Invalid S
-//     }
+//	type T struct {
+//	    Invalid S
+//	}
 //
-//     type S struct {
-//         Invalid T
-//     }
+//	type S struct {
+//	    Invalid T
+//	}
 //
 // In order to avoid generating invalid struct types, we replace all references to types involved in a cyclical
 // definition with *T. The examples above therefore become:
 //
 // (1)
-//     type T struct {
-//         Valid *T
-//     }
+//
+//	type T struct {
+//	    Valid *T
+//	}
 //
 // (2)
-//     type T struct {
-//         Valid *S
-//     }
 //
-//     type S struct {
-//         Valid *T
-//     }
+//	type T struct {
+//	    Valid *S
+//	}
+//
+//	type S struct {
+//	    Valid *T
+//	}
 //
 // We do this using a rewriter that turns all fields involved in reference cycles into optional fields.
 func rewriteCyclicField(rewritten codegen.Set, path []objectProperty, op objectProperty) {

@@ -32,6 +32,7 @@ import (
 	"unicode"
 
 	"github.com/blang/semver"
+	"github.com/iancoleman/strcase"
 
 	"github.com/pulumi/pulumi/pkg/v3/codegen"
 	"github.com/pulumi/pulumi/pkg/v3/codegen/schema"
@@ -2142,11 +2143,11 @@ func pep440VersionToSemver(v string) (semver.Version, error) {
 //
 // The docstring we generate here describes both the class itself and the arguments to the class's
 // constructor. The format of the docstring is in "Sphinx form":
-//   1. Parameters are introduced using the syntax ":param <type> <name>: <comment>". Sphinx parses this and uses it
-//      to populate the list of parameters for this function.
-//   2. The doc string of parameters is expected to be indented to the same indentation as the type of the parameter.
-//      Sphinx will complain and make mistakes if this is not the case.
-//   3. The doc string can't have random newlines in it, or Sphinx will complain.
+//  1. Parameters are introduced using the syntax ":param <type> <name>: <comment>". Sphinx parses this and uses it
+//     to populate the list of parameters for this function.
+//  2. The doc string of parameters is expected to be indented to the same indentation as the type of the parameter.
+//     Sphinx will complain and make mistakes if this is not the case.
+//  3. The doc string can't have random newlines in it, or Sphinx will complain.
 //
 // This function does the best it can to navigate these constraints and produce a docstring that
 // Sphinx can make sense of.
@@ -2423,6 +2424,7 @@ func (mod *modContext) genType(w io.Writer, name, comment string, properties []*
 		suffix = "(dict)"
 	}
 
+	name = strcase.ToCamel(name)
 	fmt.Fprintf(w, "%s\n", decorator)
 	fmt.Fprintf(w, "class %s%s:\n", name, suffix)
 	if !input && comment != "" {
