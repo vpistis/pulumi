@@ -229,7 +229,7 @@ export function run(
         }
 
 
-        var stack = err.stack;
+        let stack = err.stack;
         if (stack) {
             // emit colored stack traces
             stack = util.inspect(err, {colors: true});
