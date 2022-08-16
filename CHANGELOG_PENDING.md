@@ -28,6 +28,9 @@
 - [sdk/nodejs] Deprecate PULUMI_TEST_MODE
   [#10400](https://github.com/pulumi/pulumi/pull/10400)
 
+- [sdk/nodejs] Emit colorized nodejs stack traces
+  [#10410](https://github.com/pulumi/pulumi/pull/10410)
+
 ### Bug Fixes
 
 - [cli] Paginate template options
