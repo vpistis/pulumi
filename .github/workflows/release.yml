@@ -32,7 +32,7 @@ jobs:
         uses: jaxxstorm/action-install-gh-release@v1.7.1
         with:
           repo: pulumi/pulumictl
-          tag: v0.0.32
+          tag: v0.0.34
           cache: enable
       - name: Download versions.txt
         uses: actions/download-artifact@v2
@@ -59,7 +59,7 @@ jobs:
         uses: jaxxstorm/action-install-gh-release@v1.7.1
         with:
           repo: pulumi/pulumictl
-          tag: v0.0.32
+          tag: v0.0.34
           cache: enable
       - name: Download versions.txt
         uses: actions/download-artifact@v2
@@ -83,7 +83,7 @@ jobs:
         uses: jaxxstorm/action-install-gh-release@v1.7.1
         with:
           repo: pulumi/pulumictl
-          tag: v0.0.32
+          tag: v0.0.34
           cache: enable
       - name: Download versions.txt
         uses: actions/download-artifact@v2
@@ -110,7 +110,7 @@ jobs:
         uses: jaxxstorm/action-install-gh-release@v1.7.1
         with:
           repo: pulumi/pulumictl
-          tag: v0.0.32
+          tag: v0.0.34
           cache: enable
       - name: Download versions.txt
         uses: actions/download-artifact@v2
@@ -137,7 +137,7 @@ jobs:
         uses: jaxxstorm/action-install-gh-release@v1.7.1
         with:
           repo: pulumi/pulumictl
-          tag: v0.0.32
+          tag: v0.0.34
           cache: enable
       - name: Repository Dispatch
         run: |
@@ -155,7 +155,7 @@ jobs:
         uses: jaxxstorm/action-install-gh-release@v1.7.1
         with:
           repo: pulumi/pulumictl
-          tag: v0.0.32
+          tag: v0.0.34
           cache: enable
       - name: Download versions.txt
         uses: actions/download-artifact@v2
@@ -182,7 +182,7 @@ jobs:
         uses: jaxxstorm/action-install-gh-release@v1.7.1
         with:
           repo: pulumi/pulumictl
-          tag: v0.0.32
+          tag: v0.0.34
           cache: enable
       - name: Download versions.txt
         uses: actions/download-artifact@v2
@@ -257,7 +257,7 @@ jobs:
         uses: jaxxstorm/action-install-gh-release@v1.7.1
         with:
           repo: pulumi/pulumictl
-          tag: v0.0.32
+          tag: v0.0.34
           cache: enable
       - name: Fetch Tags
         run: |
@@ -379,7 +379,7 @@ jobs:
         uses: jaxxstorm/action-install-gh-release@v1.7.1
         with:
           repo: pulumi/pulumictl
-          tag: v0.0.32
+          tag: v0.0.34
           cache: enable
       - name: Ensure
         run: |
@@ -439,7 +439,7 @@ jobs:
         uses: jaxxstorm/action-install-gh-release@v1.7.1
         with:
           repo: pulumi/pulumictl
-          tag: v0.0.32
+          tag: v0.0.34
           cache: enable
       - name: Checkout Repo
         uses: actions/checkout@v2
