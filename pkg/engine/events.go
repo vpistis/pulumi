@@ -1,4 +1,4 @@
-// Copyright 2016-2018, Pulumi Corporation.
+// Copyright 2016-2022, Pulumi Corporation.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@ package engine
 
 import (
 	"bytes"
+	"sync/atomic"
 	"time"
 
 	"github.com/pulumi/pulumi/pkg/v3/resource/deploy"
@@ -225,31 +226,37 @@ func makeEventEmitter(events chan<- Event, update UpdateInfo) (eventEmitter, err
 	logging.AddGlobalFilter(logging.CreateFilter(secrets, "[secret]"))
 
 	buffer, done := make(chan Event), make(chan bool)
-	go queueEvents(events, buffer, done)
-
-	return eventEmitter{
-		done: done,
-		ch:   buffer,
-	}, nil
+	closed := new(int32)
+	*closed = 0
+	emitter := eventEmitter{
+		closed: closed,
+		done:   done,
+		ch:     buffer,
+	}
+	go queueEvents(emitter, events, buffer, done)
+	return emitter, nil
 }
 
 func makeQueryEventEmitter(events chan<- Event) (eventEmitter, error) {
 	buffer, done := make(chan Event), make(chan bool)
-
-	go queueEvents(events, buffer, done)
-
-	return eventEmitter{
-		done: done,
-		ch:   buffer,
-	}, nil
+	closed := new(int32)
+	*closed = 0
+	emitter := eventEmitter{
+		closed: closed,
+		done:   done,
+		ch:     buffer,
+	}
+	go queueEvents(emitter, events, buffer, done)
+	return emitter, nil
 }
 
 type eventEmitter struct {
-	done <-chan bool
-	ch   chan<- Event
+	closed *int32
+	done   <-chan bool
+	ch     chan<- Event
 }
 
-func queueEvents(events chan<- Event, buffer chan Event, done chan bool) {
+func queueEvents(emitter eventEmitter, events chan<- Event, buffer chan Event, done chan bool) {
 	// Instead of sending to the source channel directly, buffer events to account for slow receivers.
 	//
 	// Buffering is done by a goroutine that concurrently receives from the senders and attempts to send events to the
@@ -278,7 +285,11 @@ func queueEvents(events chan<- Event, buffer chan Event, done chan bool) {
 				if !ok {
 					// If the event source has been closed, flush the queue.
 					for _, e := range queue {
-						events <- e
+						if !emitter.isClosed() {
+							events <- e
+						} else {
+							emitter.logUnableToSendEvent(e)
+						}
 					}
 					return
 				}
@@ -345,8 +356,34 @@ func makeStepEventStateMetadata(state *resource.State, debug bool) *StepEventSta
 }
 
 func (e *eventEmitter) Close() {
+	wasOpen := atomic.SwapInt32(e.closed, 1) == 0
+	if wasOpen {
+		if logging.V(9) {
+			logging.V(9).Infof("Ignoring eventEmitter.Close(): %p already closed", e)
+		}
+		return
+	}
 	close(e.ch)
 	<-e.done
+}
+
+func (e *eventEmitter) isClosed() bool {
+	return atomic.LoadInt32(e.closed) != 0
+}
+
+func (e *eventEmitter) logUnableToSendEvent(event Event) {
+	if logging.V(9) {
+		logging.V(9).Infof("Ignoring event sent on a closed eventEmitter %p: %v",
+			e, event)
+	}
+}
+
+func (e *eventEmitter) sendEvent(event Event) {
+	if e.isClosed() {
+		e.logUnableToSendEvent(event)
+		return
+	}
+	e.ch <- event
 }
 
 func (e *eventEmitter) resourceOperationFailedEvent(
@@ -354,21 +391,21 @@ func (e *eventEmitter) resourceOperationFailedEvent(
 
 	contract.Requiref(e != nil, "e", "!= nil")
 
-	e.ch <- NewEvent(ResourceOperationFailed, ResourceOperationFailedPayload{
+	e.sendEvent(NewEvent(ResourceOperationFailed, ResourceOperationFailedPayload{
 		Metadata: makeStepEventMetadata(step.Op(), step, debug),
 		Status:   status,
 		Steps:    steps,
-	})
+	}))
 }
 
 func (e *eventEmitter) resourceOutputsEvent(op display.StepOp, step deploy.Step, planning bool, debug bool) {
 	contract.Requiref(e != nil, "e", "!= nil")
 
-	e.ch <- NewEvent(ResourceOutputsEvent, ResourceOutputsEventPayload{
+	e.sendEvent(NewEvent(ResourceOutputsEvent, ResourceOutputsEventPayload{
 		Metadata: makeStepEventMetadata(op, step, debug),
 		Planning: planning,
 		Debug:    debug,
-	})
+	}))
 }
 
 func (e *eventEmitter) resourcePreEvent(
@@ -376,11 +413,11 @@ func (e *eventEmitter) resourcePreEvent(
 
 	contract.Requiref(e != nil, "e", "!= nil")
 
-	e.ch <- NewEvent(ResourcePreEvent, ResourcePreEventPayload{
+	e.sendEvent(NewEvent(ResourcePreEvent, ResourcePreEventPayload{
 		Metadata: makeStepEventMetadata(step.Op(), step, debug),
 		Planning: planning,
 		Debug:    debug,
-	})
+	}))
 }
 
 func (e *eventEmitter) preludeEvent(isPreview bool, cfg config.Map) {
@@ -394,10 +431,10 @@ func (e *eventEmitter) preludeEvent(isPreview bool, cfg config.Map) {
 		configStringMap[keyString] = valueString
 	}
 
-	e.ch <- NewEvent(PreludeEvent, PreludeEventPayload{
+	e.sendEvent(NewEvent(PreludeEvent, PreludeEventPayload{
 		IsPreview: isPreview,
 		Config:    configStringMap,
-	})
+	}))
 }
 
 func (e *eventEmitter) summaryEvent(preview, maybeCorrupt bool, duration time.Duration,
@@ -405,13 +442,13 @@ func (e *eventEmitter) summaryEvent(preview, maybeCorrupt bool, duration time.Du
 
 	contract.Requiref(e != nil, "e", "!= nil")
 
-	e.ch <- NewEvent(SummaryEvent, SummaryEventPayload{
+	e.sendEvent(NewEvent(SummaryEvent, SummaryEventPayload{
 		IsPreview:       preview,
 		MaybeCorrupt:    maybeCorrupt,
 		Duration:        duration,
 		ResourceChanges: resourceChanges,
 		PolicyPacks:     policyPacks,
-	})
+	}))
 }
 
 func (e *eventEmitter) policyViolationEvent(urn resource.URN, d plugin.AnalyzeDiagnostic) {
@@ -442,7 +479,7 @@ func (e *eventEmitter) policyViolationEvent(urn resource.URN, d plugin.AnalyzeDi
 	buffer.WriteString(colors.Reset)
 	buffer.WriteRune('\n')
 
-	e.ch <- NewEvent(PolicyViolationEvent, PolicyViolationEventPayload{
+	e.sendEvent(NewEvent(PolicyViolationEvent, PolicyViolationEventPayload{
 		ResourceURN:       urn,
 		Message:           logging.FilterString(buffer.String()),
 		Color:             colors.Raw,
@@ -451,14 +488,14 @@ func (e *eventEmitter) policyViolationEvent(urn resource.URN, d plugin.AnalyzeDi
 		PolicyPackVersion: d.PolicyPackVersion,
 		EnforcementLevel:  d.EnforcementLevel,
 		Prefix:            logging.FilterString(prefix.String()),
-	})
+	}))
 }
 
 func diagEvent(e *eventEmitter, d *diag.Diag, prefix, msg string, sev diag.Severity,
 	ephemeral bool) {
 	contract.Requiref(e != nil, "e", "!= nil")
 
-	e.ch <- NewEvent(DiagEvent, DiagEventPayload{
+	e.sendEvent(NewEvent(DiagEvent, DiagEventPayload{
 		URN:       d.URN,
 		Prefix:    logging.FilterString(prefix),
 		Message:   logging.FilterString(msg),
@@ -466,7 +503,7 @@ func diagEvent(e *eventEmitter, d *diag.Diag, prefix, msg string, sev diag.Sever
 		Severity:  sev,
 		StreamID:  d.StreamID,
 		Ephemeral: ephemeral,
-	})
+	}))
 }
 
 func (e *eventEmitter) diagDebugEvent(d *diag.Diag, prefix, msg string, ephemeral bool) {
