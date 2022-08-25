@@ -16,7 +16,6 @@ package engine
 
 import (
 	"bytes"
-	"sync/atomic"
 	"time"
 
 	"github.com/pulumi/pulumi/pkg/v3/resource/deploy"
@@ -285,11 +284,7 @@ func queueEvents(emitter eventEmitter, events chan<- Event, buffer chan Event, d
 				if !ok {
 					// If the event source has been closed, flush the queue.
 					for _, e := range queue {
-						if !emitter.isClosed() {
-							events <- e
-						} else {
-							emitter.logUnableToSendEvent(e)
-						}
+						trySendEvent(events, e)
 					}
 					return
 				}
@@ -356,34 +351,12 @@ func makeStepEventStateMetadata(state *resource.State, debug bool) *StepEventSta
 }
 
 func (e *eventEmitter) Close() {
-	wasOpen := atomic.SwapInt32(e.closed, 1) == 0
-	if wasOpen {
-		if logging.V(9) {
-			logging.V(9).Infof("Ignoring eventEmitter.Close(): %p already closed", e)
-		}
-		return
-	}
-	close(e.ch)
+	tryCloseEventChan(e.ch)
 	<-e.done
 }
 
-func (e *eventEmitter) isClosed() bool {
-	return atomic.LoadInt32(e.closed) != 0
-}
-
-func (e *eventEmitter) logUnableToSendEvent(event Event) {
-	if logging.V(9) {
-		logging.V(9).Infof("Ignoring event sent on a closed eventEmitter %p: %v",
-			e, event)
-	}
-}
-
 func (e *eventEmitter) sendEvent(event Event) {
-	if e.isClosed() {
-		e.logUnableToSendEvent(event)
-		return
-	}
-	e.ch <- event
+	trySendEvent(e.ch, event)
 }
 
 func (e *eventEmitter) resourceOperationFailedEvent(
@@ -620,4 +593,50 @@ func filterArchive(v *resource.Archive, debug bool) *resource.Archive {
 		Hash:   v.Hash,
 		Assets: assets,
 	}
+}
+
+// Sends an event like a normal send but recovers from a panic on a
+// closed channel. This is generally a design smell and should be used
+// very sparingly and every use of this function needs to document the
+// need.
+//
+// eventEmitter uses tryEventSend to recover in the scenario of
+// cancelSource.Terminate being called (such as user pressing Ctrl+C
+// twice), when straggler stepExecutor workers are sending diag events
+// but the engine is shutting down.
+//
+// See https://github.com/pulumi/pulumi/issues/10431 for the details.
+func trySendEvent(ch chan<- Event, ev Event) (sent bool) {
+	sent = true
+	defer func() {
+		if recover() != nil {
+			sent = false
+			if logging.V(9) {
+				logging.V(9).Infof(
+					"Ignoring %v send on a closed channel %p",
+					ev.Type, ch)
+			}
+		}
+	}()
+	ch <- ev
+	return sent
+}
+
+// Tries to close a channel but recovers from a panic of closing a
+// closed channel. Restrictions on use are similarly to those of
+// trySendEvent.
+func tryCloseEventChan(ch chan<- Event) (closed bool) {
+	closed = true
+	defer func() {
+		if recover() != nil {
+			closed = false
+			if logging.V(9) {
+				logging.V(9).Infof(
+					"Ignoring close of a closed event channel %p",
+					ch)
+			}
+		}
+	}()
+	close(ch)
+	return closed
 }
